@@ -172,6 +172,7 @@ FILE_LICENCE ( GPL2_OR_LATER_OR_UBDL );
 //#define IMAGE_MEM_CMD		/* Read memory command */
 #define IMAGE_ARCHIVE_CMD	/* Archive image management commands */
 #define SHIM_CMD		/* EFI shim command (or dummy command) */
+#define EFIVARS_CMD		/* EFI variable enumeration command */
 //#define USB_CMD		/* USB commands */
 //#define FDT_CMD		/* Flattened Device Tree commands */
 
