@@ -28,6 +28,7 @@
 #include <getopt.h>
 #include <ipxe/command.h>
 #include <ipxe/parseopt.h>
+#include <ipxe/settings.h>
 #include <ipxe/efi/efi.h>
 #include <ipxe/efi/efi_strings.h>
 
@@ -44,14 +45,20 @@ FILE_LICENCE ( GPL2_OR_LATER_OR_UBDL );
  */
 
 /** "efivars" options */
-struct efivars_options {};
+struct efivars_options {
+	/** Setting */
+	struct named_setting setting;
+};
 
 /** "efivars" option list */
-static struct option_descriptor efivars_opts[] = {};
+static struct option_descriptor efivars_opts[] = {
+	OPTION_DESC ( "set", 's', required_argument, struct efivars_options,
+		      setting, parse_autovivified_setting ),
+};
 
 /** "efivars" command descriptor */
 static struct command_descriptor efivars_cmd =
-	COMMAND_DESC ( struct efivars_options, efivars_opts, 0, 0, NULL );
+	COMMAND_DESC ( struct efivars_options, efivars_opts, 0, 0, "[--set <setting>]" );
 
 /**
  * The "efivars" command
@@ -68,6 +75,10 @@ static int efivars_exec ( int argc, char **argv ) {
 	UINTN size;
 	EFI_GUID guid;
 	EFI_STATUS efirc;
+	char *output = NULL;
+	char *line = NULL;
+	size_t output_len = 0;
+	size_t new_len;
 	int rc;
 	int count = 0;
 
@@ -89,7 +100,10 @@ static int efivars_exec ( int argc, char **argv ) {
 	if ( ! buf )
 		return -ENOMEM;
 
-	printf ( "EFI Variables:\n" );
+	/* Print header if not storing to variable */
+	if ( ! opts.setting.settings ) {
+		printf ( "EFI Variables:\n" );
+	}
 
 	/* Iterate over all variables */
 	while ( 1 ) {
@@ -111,18 +125,64 @@ static int efivars_exec ( int argc, char **argv ) {
 		}
 		if ( efirc != 0 ) {
 			rc = -EEFI ( efirc );
-			printf ( "Error fetching variable name: %s\n", strerror ( rc ) );
+			if ( ! opts.setting.settings ) {
+				printf ( "Error fetching variable name: %s\n", strerror ( rc ) );
+			}
 			break;
 		}
 
-		/* Print variable name and GUID */
-		printf ( "%s:%ls\n", efi_guid_ntoa ( &guid ), buf );
+		/* Format variable name and GUID */
+		if ( opts.setting.settings ) {
+			/* Build output string for storing to variable */
+			if ( asprintf ( &line, "%s:%ls\n", efi_guid_ntoa ( &guid ), buf ) < 0 ) {
+				rc = -ENOMEM;
+				break;
+			}
+			
+			/* Append to output string */
+			new_len = output_len + strlen ( line );
+			output = realloc ( output, new_len + 1 );
+			if ( ! output ) {
+				free ( line );
+				rc = -ENOMEM;
+				break;
+			}
+			
+			if ( output_len == 0 ) {
+				strcpy ( output, line );
+			} else {
+				strcat ( output, line );
+			}
+			output_len = new_len;
+			
+			free ( line );
+			line = NULL;
+		} else {
+			/* Print variable name and GUID */
+			printf ( "%s:%ls\n", efi_guid_ntoa ( &guid ), buf );
+		}
 		count++;
 	}
 
-	printf ( "\nTotal: %d variables\n", count );
+	/* Store result or print total */
+	if ( opts.setting.settings && ( rc == 0 ) ) {
+		/* Use default setting type if not specified */
+		if ( ! opts.setting.setting.type )
+			opts.setting.setting.type = &setting_type_string;
+		
+		/* Store the accumulated output */
+		if ( ( rc = storef_setting ( opts.setting.settings, &opts.setting.setting,
+					     ( output ? output : "" ) ) ) != 0 ) {
+			printf ( "Could not store \"%s\": %s\n",
+				 opts.setting.setting.name, strerror ( rc ) );
+		}
+	} else if ( ! opts.setting.settings ) {
+		printf ( "\nTotal: %d variables\n", count );
+	}
 
-	/* Free temporary buffer */
+	/* Free temporary buffers */
+	free ( output );
+	free ( line );
 	free ( buf );
 
 	return rc;
