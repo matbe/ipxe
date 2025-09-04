@@ -23,6 +23,7 @@
 
 FILE_LICENCE ( GPL2_OR_LATER_OR_UBDL );
 
+#include <string.h>
 #include <time.h>
 
 /** @file
@@ -142,4 +143,84 @@ time_t mktime ( struct tm *tm ) {
 	       weekdays[ tm->tm_wday ], tm->tm_yday );
 
 	return seconds;
+}
+
+/** Static tm structure for gmtime() */
+static struct tm gmtime_tm;
+
+/**
+ * Convert time to broken-down time representation
+ *
+ * @v timep		Pointer to time value
+ * @ret tm		Broken-down time representation
+ */
+struct tm * gmtime ( const time_t *timep ) {
+	time_t days_since_epoch;
+	time_t seconds_since_day;
+	int year, month, day;
+	int is_leap;
+	
+	/* Clear the structure */
+	memset ( &gmtime_tm, 0, sizeof ( gmtime_tm ) );
+
+	/* Calculate days since epoch */
+	days_since_epoch = *timep / 86400;
+	seconds_since_day = *timep % 86400;
+
+	/* Calculate time components */
+	gmtime_tm.tm_sec = seconds_since_day % 60;
+	seconds_since_day /= 60;
+	gmtime_tm.tm_min = seconds_since_day % 60;
+	gmtime_tm.tm_hour = seconds_since_day / 60;
+
+	/* Calculate day of week (Jan 1, 1970 was Thursday = 4) */
+	gmtime_tm.tm_wday = ( days_since_epoch + 4 ) % 7;
+
+	/* Calculate year, month, and day using simpler algorithm */
+	year = 1970;
+	day = days_since_epoch;
+	
+	/* Advance through years */
+	while ( 1 ) {
+		is_leap = ( ( year % 4 ) == 0 && ( ( year % 100 ) != 0 || ( year % 400 ) == 0 ) );
+		int days_in_year = is_leap ? 366 : 365;
+		if ( day < days_in_year )
+			break;
+		day -= days_in_year;
+		year++;
+	}
+	
+	gmtime_tm.tm_year = year - 1900;
+	gmtime_tm.tm_yday = day;
+	
+	/* Calculate month and day of month */
+	month = 0;
+	while ( month < 12 ) {
+		int days_in_month;
+		
+		/* Days in each month */
+		if ( month == 1 ) { /* February */
+			days_in_month = is_leap ? 29 : 28;
+		} else if ( month == 3 || month == 5 || month == 8 || month == 10 ) {
+			days_in_month = 30; /* April, June, September, November */
+		} else {
+			days_in_month = 31; /* January, March, May, July, August, October, December */
+		}
+		
+		if ( day < days_in_month )
+			break;
+		day -= days_in_month;
+		month++;
+	}
+	
+	gmtime_tm.tm_mon = month;
+	gmtime_tm.tm_mday = day + 1;
+
+	DBGC ( &weekdays, "GMTIME %lld => %04d-%02d-%02d %02d:%02d:%02d (%s, "
+	       "day %d)\n", *timep, ( gmtime_tm.tm_year + 1900 ), 
+	       ( gmtime_tm.tm_mon + 1 ), gmtime_tm.tm_mday, gmtime_tm.tm_hour, 
+	       gmtime_tm.tm_min, gmtime_tm.tm_sec, weekdays[ gmtime_tm.tm_wday ], 
+	       gmtime_tm.tm_yday );
+
+	return &gmtime_tm;
 }
