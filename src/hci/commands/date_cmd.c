@@ -20,6 +20,7 @@
 FILE_LICENCE ( GPL2_OR_LATER );
 
 #include <stdio.h>
+#include <string.h>
 #include <time.h>
 #include <ipxe/command.h>
 #include <ipxe/parseopt.h>
@@ -29,6 +30,80 @@ FILE_LICENCE ( GPL2_OR_LATER );
  * Date and time command
  *
  */
+
+/** Static tm structure for gmtime() */
+static struct tm gmtime_tm;
+
+/**
+ * Convert time to broken-down time representation
+ *
+ * @v timep		Pointer to time value
+ * @ret tm		Broken-down time representation
+ */
+static struct tm * date_gmtime ( const time_t *timep ) {
+	time_t days_since_epoch;
+	time_t seconds_since_day;
+	int year, month, day;
+	int is_leap;
+	
+	/* Clear the structure */
+	memset ( &gmtime_tm, 0, sizeof ( gmtime_tm ) );
+
+	/* Calculate days since epoch */
+	days_since_epoch = *timep / 86400;
+	seconds_since_day = *timep % 86400;
+
+	/* Calculate time components */
+	gmtime_tm.tm_sec = seconds_since_day % 60;
+	seconds_since_day /= 60;
+	gmtime_tm.tm_min = seconds_since_day % 60;
+	gmtime_tm.tm_hour = seconds_since_day / 60;
+
+	/* Calculate day of week (Jan 1, 1970 was Thursday = 4) */
+	gmtime_tm.tm_wday = ( days_since_epoch + 4 ) % 7;
+
+	/* Calculate year, month, and day using simpler algorithm */
+	year = 1970;
+	day = days_since_epoch;
+	
+	/* Advance through years */
+	while ( 1 ) {
+		is_leap = ( ( year % 4 ) == 0 && ( ( year % 100 ) != 0 || ( year % 400 ) == 0 ) );
+		int days_in_year = is_leap ? 366 : 365;
+		if ( day < days_in_year )
+			break;
+		day -= days_in_year;
+		year++;
+	}
+	
+	gmtime_tm.tm_year = year - 1900;
+	gmtime_tm.tm_yday = day;
+	
+	/* Calculate month and day of month */
+	month = 0;
+	while ( month < 12 ) {
+		int days_in_month;
+		
+		/* Days in each month */
+		if ( month == 1 ) { /* February */
+			days_in_month = is_leap ? 29 : 28;
+		} else if ( month == 3 || month == 5 || month == 8 || month == 10 ) {
+			days_in_month = 30; /* April, June, September, November */
+		} else {
+			days_in_month = 31; /* January, March, May, July, August, October, December */
+		}
+		
+		if ( day < days_in_month )
+			break;
+		day -= days_in_month;
+		month++;
+	}
+	
+	gmtime_tm.tm_mon = month;
+	gmtime_tm.tm_mday = day + 1;
+
+	return &gmtime_tm;
+}
 
 /** "date" options */
 struct date_options {};
@@ -61,7 +136,7 @@ static int date_exec ( int argc, char **argv ) {
 	now = time ( NULL );
 
 	/* Convert to broken-down time */
-	tm = gmtime ( &now );
+	tm = date_gmtime ( &now );
 	if ( ! tm ) {
 		printf ( "Unable to get current time\n" );
 		return -1;
