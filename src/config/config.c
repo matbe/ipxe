@@ -311,6 +311,9 @@ REQUIRE_OBJECT ( usb_cmd );
 #ifdef FDT_CMD
 REQUIRE_OBJECT ( fdt_cmd );
 #endif
+#ifdef EFIVARS_CMD
+REQUIRE_OBJECT ( efivars_cmd );
+#endif
 
 /*
  * Drag in miscellaneous objects
